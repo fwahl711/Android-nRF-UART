@@ -26,7 +26,14 @@ package com.nordicsemi.nrfUARTv2;
 
 
 
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.PrintWriter;
 import java.io.UnsupportedEncodingException;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.UnknownHostException;
 import java.text.DateFormat;
 import java.util.Date;
 
@@ -75,6 +82,8 @@ public class MainActivity extends Activity implements RadioGroup.OnCheckedChange
     private static final int UART_PROFILE_CONNECTED = 20;
     private static final int UART_PROFILE_DISCONNECTED = 21;
     private static final int STATE_OFF = 10;
+    private static final int TCP_PORT = 13370;
+    private static final String TCP_IP = "127.0.0.1";
 
     TextView mRemoteRssiVal;
     RadioGroup mRg;
@@ -85,7 +94,12 @@ public class MainActivity extends Activity implements RadioGroup.OnCheckedChange
     private ListView messageListView;
     private ArrayAdapter<String> listAdapter;
     private Button btnConnectDisconnect,btnSend;
+    private Button btnPreble, btnStart, btnClear;
     private EditText edtMessage;
+
+    private ServerSocket socket;
+    private Socket socketComm;
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -102,12 +116,16 @@ public class MainActivity extends Activity implements RadioGroup.OnCheckedChange
         messageListView.setDivider(null);
         btnConnectDisconnect=(Button) findViewById(R.id.btn_select);
         btnSend=(Button) findViewById(R.id.sendButton);
+        btnPreble = (Button) findViewById(R.id.btn_preble);
+        btnStart = (Button) findViewById(R.id.btn_start);
+        btnClear = (Button) findViewById(R.id.btn_clear);
         edtMessage = (EditText) findViewById(R.id.sendText);
         service_init();
 
-     
-       
-        // Handle Disconnect & Connect button
+        new Thread(new ClientThread()).start();
+
+
+        // Handler Disconnect & Connect button
         btnConnectDisconnect.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -155,6 +173,55 @@ public class MainActivity extends Activity implements RadioGroup.OnCheckedChange
 					e.printStackTrace();
 				}
                 
+            }
+        });
+
+        btnPreble.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String message = ":preble send\n";
+                byte[] value;
+                try {
+                    //send data to service
+                    value = message.getBytes("UTF-8");
+                    mService.writeRXCharacteristic(value);
+                    //Update the log with time stamp
+                    String currentDateTimeString = DateFormat.getTimeInstance().format(new Date());
+                    listAdapter.add("[" + currentDateTimeString + "] TX: " + message);
+                    messageListView.smoothScrollToPosition(listAdapter.getCount() - 1);
+
+                } catch (UnsupportedEncodingException e) {
+                    // TODO Auto-generated catch block
+                    e.printStackTrace();
+                }
+            }
+        });
+
+        btnStart.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String message = ":a start glass_demo\n";
+                byte[] value;
+                try {
+                    //send data to service
+                    value = message.getBytes("UTF-8");
+                    mService.writeRXCharacteristic(value);
+                    //Update the log with time stamp
+                    String currentDateTimeString = DateFormat.getTimeInstance().format(new Date());
+                    listAdapter.add("[" + currentDateTimeString + "] TX: " + message);
+                    messageListView.smoothScrollToPosition(listAdapter.getCount() - 1);
+
+                } catch (UnsupportedEncodingException e) {
+                    // TODO Auto-generated catch block
+                    e.printStackTrace();
+                }
+            }
+        });
+
+        btnClear.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                messageListView.smoothScrollToPosition(listAdapter.getCount() - 1);
             }
         });
      
@@ -240,6 +307,13 @@ public class MainActivity extends Activity implements RadioGroup.OnCheckedChange
             if (action.equals(UartService.ACTION_DATA_AVAILABLE)) {
               
                  final byte[] txValue = intent.getByteArrayExtra(UartService.EXTRA_DATA);
+                 try{
+                     String msg = new String(txValue, "UTF-8");
+                     Log.d(TAG, "Message received: " + msg);
+                     forwardMessage(msg);
+                 } catch (Exception e) {
+                     Log.e(TAG, e.toString());
+                 }
                  runOnUiThread(new Runnable() {
                      public void run() {
                          try {
@@ -287,6 +361,13 @@ public class MainActivity extends Activity implements RadioGroup.OnCheckedChange
     @Override
     public void onDestroy() {
     	 super.onDestroy();
+
+        try{
+            socket.close();
+        } catch(Exception e){
+
+        }
+
         Log.d(TAG, "onDestroy()");
         
         try {
@@ -404,6 +485,34 @@ public class MainActivity extends Activity implements RadioGroup.OnCheckedChange
             })
             .setNegativeButton(R.string.popup_no, null)
             .show();
+        }
+    }
+
+    class ClientThread implements Runnable {
+        public void run() {
+            try {
+                socket = new ServerSocket(TCP_PORT);
+            } catch (IOException e1) {
+                e1.printStackTrace();
+            }
+            while(!Thread.currentThread().isInterrupted()) {
+                try {
+                    socketComm = socket.accept();
+                } catch(IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    public void forwardMessage(String msg) {
+        try {
+            OutputStream out = socketComm.getOutputStream();
+            PrintWriter output = new PrintWriter(out, true);
+
+            output.println(msg);
+        } catch(Exception e) {
+            e.printStackTrace();
         }
     }
 }
